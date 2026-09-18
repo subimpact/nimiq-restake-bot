@@ -22,7 +22,6 @@ VALIDATOR='NQ08 ACT8 T0FE PTG8 P5RL H2S3 QGXH V15R NVXY'
 COINBASE='NQ81 C01N BASE 0000 0000 0000 0000 0000 0000'
 CONTRACT='NQ77 0000 0000 0000 0000 0000 0000 0000 0000'
 MIN_TRIGGER=2000        # Lunas (0.02 NIM) total balance to bother
-MIN_SHARE=500           # Lunas (0.005 NIM) per-staker floor (skip dust)
 RESERVE=100000          # keep 1.0 NIM in wallet (rounding / future fees)
 # Sentinel is forward-looking only: ignore inbound txs before this block so the
 # Sep 11 100k NQ27->NQ08 deposit (blk 61301883) and older history never qualify.
@@ -112,7 +111,11 @@ for s in d:
     print(s['address'].replace(' ',''), int(s['balance']))
 " | while read -r ADDR SB; do
   SHARE=$(( SB * AVAIL / TOTAL ))
-  [ "$SHARE" -lt "$MIN_SHARE" ] && continue
+  # Every staker gets their proportional share, however small: a dust share
+  # that is skipped here would still accrue on-chain, but the pool's promise is
+  # "every staker is paid every cycle", so only a zero share (0 < stake but
+  # integer floor rounds it away) is skipped.
+  [ "$SHARE" -le 0 ] && continue
   R=$(h "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"sendStakeTransaction\",\"params\":[\"$VALIDATOR\",\"$ADDR\",$SHARE,0,\"+0\"]}")
   echo "$(TS) restaked $SHARE lunas -> $ADDR: $R" >> "$LOG"
 done
