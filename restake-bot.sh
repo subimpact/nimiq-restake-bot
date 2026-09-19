@@ -1,5 +1,5 @@
 #!/bin/bash
-# ImpactZero restake bot v2.3 — 2026-09-16 (v2.3: sentinel reads stdin, not env var — fixes E2BIG)
+# ImpactZero restake bot v2.4 — 2026-09-19 (v2.4: sentinel falls back to LOCAL node history when public RPC blips; epoch-boundary failures were burning 1-2 cycles/min)
 # Cron every 1 min. Distributes NQ08 reward balance into staker records
 # (0% fee, proportional). Logs + raises flag for Hermes bridge.
 #
@@ -39,6 +39,14 @@ for attempt in 1 2; do
   IN=$(curl -s -m 15 -X POST "$PUB_RPC" -H 'Content-Type: application/json' \
     -H 'User-Agent: impactzero-restake/2.2' \
     -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getTransactionsByAddress\",\"params\":[\"$VALIDATOR\",200,null]}" 2>/dev/null)
+  # v2.4: if public RPC returned nothing usable, retry once more with a longer
+  # timeout before failing closed (failures are transient epoch-boundary blips).
+  if [ -z "$IN" ] || ! echo "$IN" | python3 -c 'import json,sys; json.load(sys.stdin)' >/dev/null 2>&1; then
+    sleep 5
+    IN=$(curl -s -m 30 -X POST "$PUB_RPC" -H 'Content-Type: application/json' \
+      -H 'User-Agent: impactzero-restake/2.4' \
+      -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getTransactionsByAddress\",\"params\":[\"$VALIDATOR\",200,null]}" 2>/dev/null)
+  fi
   NEW=$(HOLD_SINCE="$HOLD_SINCE" python3 -c '
 import json, os, sys
 try:
