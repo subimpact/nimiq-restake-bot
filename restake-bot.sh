@@ -22,7 +22,9 @@ VALIDATOR='NQ08 ACT8 T0FE PTG8 P5RL H2S3 QGXH V15R NVXY'
 COINBASE='NQ81 C01N BASE 0000 0000 0000 0000 0000 0000'
 CONTRACT='NQ77 0000 0000 0000 0000 0000 0000 0000 0000'
 MIN_TRIGGER=2000        # Lunas (0.02 NIM) total balance to bother
-RESERVE=100000          # keep 1.0 NIM in wallet (rounding / future fees)
+RESERVE=0               # no wallet floor: tx fees are 0 on Nimiq today; the
+                        # payout loop sends only computed shares, so every
+                        # last luna restakes (set >0 to keep a safety floor)
 # Sentinel is forward-looking only: ignore inbound txs before this block so the
 # Sep 11 100k NQ27->NQ08 deposit (blk 61301883) and older history never qualify.
 HOLD_SINCE=61600000

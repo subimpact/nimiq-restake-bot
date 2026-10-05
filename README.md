@@ -28,7 +28,7 @@ It reads the full staker ledger from the chain each cycle, computes each share, 
 - **Fail-closed sentinel** — unexpected inbound transfers to the reward address (not coinbase, not the staking contract) are held and flagged, never distributed.
 - **Retry wrapper** — transient public-RPC failures are retried once before conceding a cycle (E2BIG gotcha: never pass the RPC response through an environment variable; pipe it via stdin — env caps at 128 KB once a producing validator's history grows).
 - **Pay every staker** — every staker receives their proportional share each cycle, however small; only a share that integer-floor rounds to zero is skipped.
-- **Reserve** — 1.0 NIM stays in the wallet for rounding and future fees.
+- **Reserve** — 0 by default (Nimiq tx fees are 0 today, so every last luna restakes); set `RESERVE > 0` for a wallet safety floor.
 - **Lock file** — `flock` prevents overlapping cycles.
 
 ## Requirements
@@ -62,7 +62,7 @@ crontab -l | { cat; echo "*/2 * * * * /root/validator-watchdog.sh >/dev/null 2>&
 | `VALIDATOR` | ImpactZero address | your validator address |
 | `COINBASE` / `CONTRACT` | protocol constants | hold-sentinel filters |
 | `MIN_TRIGGER` | 2000 (0.02 NIM) | minimum wallet balance to bother |
-| `RESERVE` | 100000 (1 NIM) | permanent wallet reserve |
+| `RESERVE` | 0 | optional wallet safety floor (luna) |
 | `HOLD_SINCE` | `61600000` | sentinel lookback start block |
 
 ## Changelog / lessons learned
