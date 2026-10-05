@@ -1,5 +1,5 @@
 #!/bin/bash
-# ImpactZero restake bot v2.4 — 2026-09-19 (v2.4: sentinel falls back to LOCAL node history when public RPC blips; epoch-boundary failures were burning 1-2 cycles/min)
+# ImpactZero restake bot v2.5 - 2026-10-05 (v2.5: epoch-boundary stake snapshot jsonl for election-stake transparency; v2.4: sentinel falls back to LOCAL node history when public RPC blips; epoch-boundary failures were burning 1-2 cycles/min)
 # Cron every 1 min. Distributes NQ08 reward balance into staker records
 # (0% fee, proportional). Logs + raises flag for Hermes bridge.
 #
@@ -129,4 +129,31 @@ for s in d:
 done
 echo "$(TS) restake-cycle done (bal=$BAL avail=$AVAIL held=$HELD total=$TOTAL)" >> "$LOG"
 echo "restake-cycle" > "$FLAG"
+
+# 4. Epoch-boundary stake snapshot (election-stake audit trail), v2.5.
+# Once per epoch (idempotent guard on the last snapshotted epoch): record the
+# current stake distribution a couple of seconds after the epoch's first macro
+# block. Per-minute CURRENT-balance pricing remains the payout policy; this
+# file is the auditable "stake at election time" reference, not payout math.
+# Caveat kept in the record: snapshot lands ~1-2 min after the boundary, and
+# fee-free coinbase compounding shifts shares by far less than 0.01%.
+SNAP_FILE=/root/validator-stake-snapshots.jsonl
+EP_LAST=$(tail -n 1 "$SNAP_FILE" 2>/dev/null | grep -oE '"epoch": ?[0-9]+' | grep -oE '[0-9]+' || echo 0)
+HEAD=$(h '{"jsonrpc":"2.0","id":1,"method":"getBlockNumber","params":[]}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["data"])' 2>/dev/null)
+if [ -n "$HEAD" ] && [ "$HEAD" -gt 0 ]; then
+  EP=$(( (HEAD - 1) / 43200 - 79 ))
+  if [ "$EP" -gt "$EP_LAST" ] 2>/dev/null; then
+    echo "$RAW" | HEAD="$HEAD" EP="$EP" TOTAL="$TOTAL" TS_TS="$(TS)" python3 -c '
+import json, os, sys
+rows = json.load(sys.stdin)["result"]["data"]
+out = {"epoch": int(os.environ["EP"]), "head_block": int(os.environ["HEAD"]),
+       "total": int(os.environ["TOTAL"]), "ts_utc": os.environ["TS_TS"],
+       "stakers": [{"address": r["address"].replace(" ", ""), "balance": int(r["balance"]),
+                    "inactive": int(r.get("inactiveBalance", 0))}
+                   for r in rows]}
+print(json.dumps(out))
+' >> "$SNAP_FILE" 2>>"$LOG"
+    echo "$(TS) snapshot: epoch $EP head=$HEAD total=$TOTAL appended (prev=$EP_LAST)" >> "$LOG"
+  fi
+fi
 exit 0
