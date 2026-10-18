@@ -17,6 +17,10 @@ FLAG=/root/validator-restake-flag
 HOLD_FLAG=/root/validator-restake-hold-flag
 HOLD_LEDGER=/root/validator-restake-hold.ledger
 RPC='http://127.0.0.1:8648'
+# How to reach the node RPC (127.0.0.1 inside the container). Default: `docker exec`.
+# On busy hosts set RPC_CURL=/path/to/nimiq-curl (shipped in this repo): host curl via
+# nsenter into the container's netns, no runc spawn per call, falls back to docker exec.
+RPC_CURL=${RPC_CURL:-docker exec nimiq curl}
 PUB_RPC='https://rpc.nimiqwatch.com'
 VALIDATOR='NQ08 ACT8 T0FE PTG8 P5RL H2S3 QGXH V15R NVXY'
 COINBASE='NQ81 C01N BASE 0000 0000 0000 0000 0000 0000'
@@ -31,7 +35,7 @@ HOLD_SINCE=61600000
 TS() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 rm -f "$FLAG"
 
-h() { docker exec nimiq curl -s -m 8 -X POST "$RPC" -H 'Content-Type: application/json' -d "$1" 2>/dev/null; }
+h() { $RPC_CURL -s -m 8 -X POST "$RPC" -H 'Content-Type: application/json' -d "$1" 2>/dev/null; }
 
 # --- Sentinel: find inbound transfers to hold (fail-closed) ---
 # v2.2 retry wrapper: one transient RPC blip must not burn a cycle or alert.

@@ -1,0 +1,23 @@
+#!/bin/bash
+# /root/nimiq-curl - run curl INSIDE the nimiq container's network namespace with the HOST curl
+# (nsenter -n), instead of `docker exec nimiq curl` (each exec costs dockerd a runc spawn; ~26/min
+# made dockerd sit at ~60% of a core). The node container is not touched.
+# Usage: nimiq-curl [curl] <curl args...>   (a leading literal "curl" is accepted and dropped,
+#        so callers can swap the prefix `docker exec nimiq` -> `/root/nimiq-curl`)
+# Safety: if the netns path fails (no pid, wrong process, curl rc!=0 or empty output) it falls
+# back to the original `docker exec nimiq curl` path, so a helper fault == today's behaviour.
+# Fallbacks are logged to /root/nimiq-curl-fallback.log. Plan: wiki queries/plan-impactzero-rpc-nsenter-2026-10-19.md
+[ "$1" = curl ] && shift
+CACHE=/run/nimiq-netns.pid
+valid() { [ -n "$1" ] && [ "$1" != 0 ] && grep -qa nimiq-client "/proc/$1/cmdline" 2>/dev/null; }
+P=$(cat "$CACHE" 2>/dev/null)
+if ! valid "$P"; then
+  P=$(docker inspect -f '{{.State.Pid}}' nimiq 2>/dev/null)
+  valid "$P" && echo "$P" > "$CACHE"
+fi
+if valid "$P"; then
+  OUT=$(nsenter -t "$P" -n curl "$@" 2>/dev/null); RC=$?
+  if [ "$RC" -eq 0 ] && [ -n "$OUT" ]; then printf '%s\n' "$OUT"; exit 0; fi
+fi
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) fallback pid=${P:-none} rc=${RC:-na}" >> /root/nimiq-curl-fallback.log
+exec docker exec nimiq curl "$@"

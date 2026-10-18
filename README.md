@@ -12,6 +12,7 @@ Runs a **0% fee**, fully transparent pool: every block reward is automatically c
 
 - **`restake-bot.sh`** — compounder: sweeps the validator reward address and re-stakes every reward to all stakers, proportional to their share, once per minute.
 - **`watchdog.sh`** — resilience guard: restarts the node on panic/stall, auto-reactivates the validator on inactivity.
+- **`nimiq-curl`** — optional RPC helper: runs the host `curl` inside the node container's network namespace (`nsenter -n`) instead of `docker exec nimiq curl`. A restake bot sending one tx per staker per minute otherwise makes dockerd spawn a runc process per call (we measured ~26/min, dockerd at ~60% of a core). Falls back to `docker exec` on any failure and logs it to `/root/nimiq-curl-fallback.log`. Needs root (`nsenter`) and a host `curl`.
 
 ## How restaking works
 
@@ -51,6 +52,11 @@ install -m 0755 watchdog.sh /root/validator-watchdog.sh
 
 # 3. Cron (root)
 crontab -l | { cat; echo "*/2 * * * * /root/validator-watchdog.sh >/dev/null 2>&1"; echo "* * * * * /root/validator-restake.sh >/dev/null 2>&1"; } | crontab -
+
+# 4. Optional: exec-free RPC (recommended once you have many stakers)
+install -m 0755 nimiq-curl /root/nimiq-curl
+#    then prefix both cron commands with RPC_CURL=/root/nimiq-curl, e.g.
+#    * * * * * RPC_CURL=/root/nimiq-curl /root/validator-restake.sh >/dev/null 2>&1
 ```
 
 ## Configuration (top of `restake-bot.sh`)
@@ -58,6 +64,7 @@ crontab -l | { cat; echo "*/2 * * * * /root/validator-watchdog.sh >/dev/null 2>&
 | Var | Default | Meaning |
 |---|---|---|
 | `RPC` | `http://127.0.0.1:8648` | local node RPC |
+| `RPC_CURL` | `docker exec nimiq curl` | command used to reach `RPC`; set `/root/nimiq-curl` for the exec-free path (also read by `watchdog.sh`) |
 | `PUB_RPC` | `https://rpc.nimiqwatch.com` | public RPC for history (sentinel) |
 | `VALIDATOR` | ImpactZero address | your validator address |
 | `COINBASE` / `CONTRACT` | protocol constants | hold-sentinel filters |
@@ -67,6 +74,7 @@ crontab -l | { cat; echo "*/2 * * * * /root/validator-watchdog.sh >/dev/null 2>&
 
 ## Changelog / lessons learned
 
+- **v2.6** — optional exec-free RPC: `RPC_CURL` setting (default `docker exec nimiq curl`, unchanged behaviour) plus the `nimiq-curl` nsenter helper. One `docker exec` per RPC call made dockerd spawn ~26 runc processes a minute on a 19-staker pool; the helper removes them without touching the node container.
 - **v2.3** — sentinel reads RPC JSON via stdin, not an environment variable. Fixes `E2BIG` (exit 126) that silently halts the sentinel once a producing validator's tx history exceeds ~128 KB.
 - **v2.2** — retry wrapper: 2 attempts, 3s apart before fail-closed.
 - **v2.0** — hold sentinel for accidental sends.
