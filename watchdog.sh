@@ -9,6 +9,10 @@ LOG=/root/validator-watchdog.log
 FLAG=/root/validator-watchdog-flag
 VALIDATOR="NQ08 ACT8 T0FE PTG8 P5RL H2S3 QGXH V15R NVXY"
 RPC='http://127.0.0.1:8648'
+# How to reach the node RPC (127.0.0.1 inside the container). Default: `docker exec`.
+# On busy hosts set RPC_CURL=/path/to/nimiq-curl (shipped in this repo): host curl via
+# nsenter into the container's netns, no runc spawn per call, falls back to docker exec.
+RPC_CURL=${RPC_CURL:-docker exec nimiq curl}
 [ -f /root/.validator-keys.conf ] && . /root/.validator-keys.conf
 TS() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 rm -f "$FLAG"
@@ -23,7 +27,7 @@ fi
 
 # small helper: RPC ok?
 rpc_ok() {
-  docker exec nimiq curl -s -m 8 -X POST "$RPC" -H 'Content-Type: application/json' \
+  $RPC_CURL -s -m 8 -X POST "$RPC" -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"getBlockNumber","params":[]}' 2>/dev/null | \
     python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["data"])' 2>/dev/null
 }
@@ -49,7 +53,7 @@ if [ "$H2" -le "$H1" ]; then
 fi
 
 # --- [4] validator inactive? (reactivate, with 10-min cooldown) ---
-ST=$(docker exec nimiq curl -s -m 8 -X POST "$RPC" -H 'Content-Type: application/json' \
+ST=$($RPC_CURL -s -m 8 -X POST "$RPC" -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getValidatorByAddress","params":["NQ08 ACT8 T0FE PTG8 P5RL H2S3 QGXH V15R NVXY"]}' 2>/dev/null | \
   python3 -c 'import json,sys; d=json.load(sys.stdin)["result"]["data"]; print("INACTIVE" if d.get("inactivityFlag") is not None else "ACTIVE")' 2>/dev/null)
 if [ "$ST" = "INACTIVE" ]; then
@@ -61,7 +65,7 @@ if [ "$ST" = "INACTIVE" ]; then
   [ -z "$H" ] && exit 0
   TX=$(docker exec nimiq nimiq-mktx validator reactivate "$FEE_KEY" "$VALIDATOR" "$SIGN_KEY" -f 0 -V "$H" 2>/dev/null)
   if [ -n "$TX" ]; then
-    R=$(docker exec nimiq curl -s -m 15 -X POST "$RPC" -H 'Content-Type: application/json' \
+    R=$($RPC_CURL -s -m 15 -X POST "$RPC" -H 'Content-Type: application/json' \
       -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"sendRawTransaction\",\"params\":[\"$TX\"]}")
     echo "$(TS) INACTIVE -> reactivate sent at height $H: $R" >> "$LOG"
     echo "$(TS) reactivated" > "$FLAG"
