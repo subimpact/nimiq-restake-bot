@@ -39,7 +39,9 @@ share_i = w_i / (sum(w) + validator deposit) x available
 
 New or added stake earns from the next epoch, when the protocol's election counts it (validator slots are fixed at the election, so stake that arrives mid-epoch does not produce rewards until then). A staker who deactivates stops earning immediately and their share for the rest of that epoch goes to the stakers who remain. If the epoch-start snapshot is missing, the cycle is skipped and the rewards wait for the next one (fail-closed, never a guess).
 
-Whichever rule pays, the bot computes both every cycle and writes one comparison row per epoch to `/root/validator-restake-shadow.jsonl` (totals under each rule plus every staker whose amount differs), so an operator can see the effect of a switch before making it. ImpactZero currently runs `PRICING=current`.
+Whichever rule pays, the bot computes both every cycle and writes one comparison row per epoch to `/root/validator-restake-shadow.jsonl` (totals under each rule plus every staker whose amount differs), so an operator can see the effect of a switch before making it.
+
+**Switching at a named epoch (`ELECTION_FROM_EPOCH`)**: set it to an epoch number and the bot pays `current` until that epoch starts, then `election` from its first cycle on, with no restart or edit at the boundary. An explicit `PRICING` setting still wins. ImpactZero runs `ELECTION_FROM_EPOCH=1432`: election pricing from epoch 1432 (27 October 2026), as announced in its wallet listing.
 
 Shares are integer-floored per staker; the unpaid remainder stays in the wallet and is swept in the next cycle.
 
@@ -93,10 +95,12 @@ install -m 0755 nimiq-curl /root/nimiq-curl
 | `RESERVE` | 0 | optional wallet safety floor (luna) |
 | `HOLD_SINCE` | `61600000` | sentinel lookback start block |
 | `PRICING` | `current` | payout rule: `current` (live balance) or `election` (epoch-start stake, capped at live) |
+| `ELECTION_FROM_EPOCH` | `0` | switch to `election` automatically from this epoch on (`0` = off; ignored when `PRICING` is set) |
 | `DRYRUN` | `0` | `1` = print shares only, no transactions, no state writes |
 
 ## Changelog / lessons learned
 
+- **v2.8**: `ELECTION_FROM_EPOCH` gate: switch the payout rule to `election` at a named epoch, so the switch lands exactly on an epoch boundary. ImpactZero switched at epoch 1432.
 - **v2.7**: payout rule is selectable: `PRICING=current` (default, unchanged behaviour) or `PRICING=election`. Both rules are computed every cycle and compared per epoch in a shadow ledger. The epoch stake snapshot is now taken before that epoch's first payout (new `lag_blocks` field). `DRYRUN=1` mode for safe testing.
 - **v2.5**: epoch-boundary stake snapshot (`/root/validator-stake-snapshots.jsonl`) for an auditable record of election-time stake.
 - **v2.6** — optional exec-free RPC: `RPC_CURL` setting (default `docker exec nimiq curl`, unchanged behaviour) plus the `nimiq-curl` nsenter helper. One `docker exec` per RPC call made dockerd spawn ~26 runc processes a minute on a 19-staker pool; the helper removes them without touching the node container.

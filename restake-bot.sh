@@ -1,4 +1,5 @@
 #!/bin/bash
+# v2.8 - 2026-10-26: ELECTION_FROM_EPOCH gate. Election pricing starts by itself at the first cycle of epoch N; earlier epochs keep current pricing. An explicit PRICING env still wins. 0 = gate off (default here; ImpactZero runs 1432).
 # ImpactZero restake bot v2.7 - 2026-10-22 (v2.7: PRICING=current|election; election = weight min(epoch-start snapshot, current active), new/added stake earns from the next election; epoch snapshot now taken BEFORE distribution; per-epoch shadow comparison in /root/validator-restake-shadow.jsonl. DRYRUN=1 = no sends, no state writes, prints to stdout.)
 # v2.5 - 2026-10-05 (v2.5: epoch-boundary stake snapshot jsonl for election-stake transparency; v2.4: sentinel falls back to LOCAL node history when public RPC blips; epoch-boundary failures were burning 1-2 cycles/min)
 # Cron every 1 min. Distributes NQ08 reward balance into staker records
@@ -10,8 +11,10 @@
 # v2.1: hash-first hold-flag content (bridge dedupes on it) + fail-closed now also
 # raises the alert flag so a silent skip is never invisible.
 # Pure RPC — the node's imported/unlocked NQ08 wallet signs internally. No key files.
+PRICING_ENV=${PRICING:-}       # an explicit PRICING env overrides the epoch gate below
 PRICING=${PRICING:-current}   # current = split by live active balance (v2.5 policy)
                               # election = split by min(epoch-start snapshot, live active)
+ELECTION_FROM_EPOCH=${ELECTION_FROM_EPOCH:-0}   # v2.8: election pricing from this epoch on (0 = off)
 DRYRUN=${DRYRUN:-0}
 if [ "$DRYRUN" = 1 ]; then
   exec 9>/tmp/validator-restake-dryrun.lock
@@ -129,6 +132,9 @@ h "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"unlockAccount\",\"params\":[\"$VAL
 HEAD=$(h '{"jsonrpc":"2.0","id":1,"method":"getBlockNumber","params":[]}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["data"])' 2>/dev/null)
 [ -z "$HEAD" ] && exit 0
 EP=$(( (HEAD - 1) / 43200 - 79 ))
+if [ -z "$PRICING_ENV" ] && [ "$ELECTION_FROM_EPOCH" -gt 0 ] 2>/dev/null && [ "$EP" -ge "$ELECTION_FROM_EPOCH" ]; then
+  PRICING=election   # v2.8 gate: the named switch epoch has started
+fi
 TOTAL=$(h "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getValidatorByAddress\",\"params\":[\"$VALIDATOR\"]}" | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["result"]["data"]["balance"]))' 2>/dev/null)
 [ -z "$TOTAL" ] || [ "$TOTAL" -le 0 ] && exit 0
 RAW=$(h "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getStakersByValidatorAddress\",\"params\":[\"$VALIDATOR\"]}")
